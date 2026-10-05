@@ -1,0 +1,84 @@
+// 港口船员登离轮身份核对与岸上通行系统 — 数据模型
+// SQLite 不支持枚举，状态字段统一用 String 并在服务层校验取值。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 航次：船员登岸/返船均按航次管理，离港确认后状态变为 DEPARTED
+model Voyage {
+  id            String                  @id @default(cuid())
+  voyageNo      String                  @unique
+  vessel        String
+  status        String                  @default("OPEN") // OPEN | DEPARTED
+  createdAt     DateTime                @default(now())
+  lists         CrewList[]
+  events        PassEvent[]
+  confirmations DepartureConfirmation[]
+}
+
+// 名单版本：代理每次提交生成新版本，旧版本置为 SUPERSEDED，通行权限随之失效
+model CrewList {
+  id          String       @id @default(cuid())
+  voyageId    String
+  voyage      Voyage       @relation(fields: [voyageId], references: [id])
+  version     Int
+  status      String       @default("ACTIVE") // ACTIVE | SUPERSEDED
+  submittedBy String
+  note        String?
+  createdAt   DateTime     @default(now())
+  members     CrewMember[]
+
+  @@unique([voyageId, version])
+}
+
+// 名单条目：属于某一个名单版本；证件尾号用于值守页展示
+model CrewMember {
+  id         String      @id @default(cuid())
+  listId     String
+  list       CrewList    @relation(fields: [listId], references: [id])
+  name       String
+  docNo      String
+  docTail    String
+  photoUrl   String?
+  status     String      @default("NORMAL") // NORMAL | SUSPENDED（证件遗失暂停通行）
+  statusNote String?
+  events     PassEvent[]
+}
+
+// 通行事件：eventNo 为扫码端生成的事件号，全局唯一，用于离线补传/重复扫码去重。
+// 人员当前状态由“已接受(ACCEPTED)事件中 occurredAt 最新的一条”推导，而不是计数，
+// 因此重复补传不会把同一人算成两次返船，晚返船的离线记录也不会漏。
+model PassEvent {
+  id         String      @id @default(cuid())
+  eventNo    String      @unique
+  voyageId   String
+  voyage     Voyage      @relation(fields: [voyageId], references: [id])
+  memberId   String?
+  member     CrewMember? @relation(fields: [memberId], references: [id])
+  docNo      String
+  direction  String // ASHORE 登岸 | RETURN 返船
+  source     String      @default("GATE") // GATE 闸口在线 | OFFLINE_SYNC 离线补传
+  result     String // ACCEPTED | REJECTED | （重复提交不会新建记录，返回 DUPLICATE）
+  reason     String? // NO_PERMISSION | MEMBER_SUSPENDED | VOYAGE_CLOSED | VOYAGE_NOT_FOUND
+  occurredAt DateTime // 扫码设备上报的事件发生时间
+  receivedAt DateTime    @default(now()) // 服务端接收时间
+
+  @@index([voyageId, docNo])
+}
+
+// 离港确认：快照记录确认时生效名单上的实际人员，供事后核查
+model DepartureConfirmation {
+  id          String   @id @default(cuid())
+  voyageId    String   @unique
+  voyage      Voyage   @relation(fields: [voyageId], references: [id])
+  confirmedBy String
+  listVersion Int
+  snapshot    String // JSON：[{ memberId, name, docTail, state }]
+  createdAt   DateTime @default(now())
+}

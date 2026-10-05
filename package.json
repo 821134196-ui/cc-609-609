@@ -1,0 +1,20 @@
+{
+  "name": "port-crew-pass",
+  "private": true,
+  "version": "1.0.0",
+  "description": "港口船员登离轮身份核对与岸上通行系统（按航次管理）",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run db:setup",
+    "db:setup": "npm run db:setup --workspace server",
+    "dev": "concurrently -n api,web -c blue,green \"npm run start:dev --workspace server\" \"npm run dev --workspace client\"",
+    "start": "npm run setup && npm run dev",
+    "test": "npm run test --workspace server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

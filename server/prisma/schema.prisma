@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Vessel {
+  id      Int       @id @default(autoincrement())
+  name    String
+  imo     String    @unique
+  voyages Voyage[]
+}
+
+model Voyage {
+  id         Int                @id @default(autoincrement())
+  vesselId   Int
+  voyageNo   String             @unique
+  status     String             @default("OPEN") // OPEN | DEPARTED
+  openedAt   DateTime           @default(now())
+  departedAt DateTime?
+  vessel     Vessel             @relation(fields: [vesselId], references: [id])
+  versions   ManifestVersion[]
+  events     AccessEvent[]
+}
+
+/// 证件持有人（全局证件号标识，证件可被暂停）
+model Person {
+  id         Int              @id @default(autoincrement())
+  name       String
+  certNo     String           @unique
+  certLast4  String
+  photo      String           // data URI 头像
+  status     String           @default("ACTIVE") // ACTIVE | SUSPENDED
+  statusNote String?
+  createdAt  DateTime         @default(now())
+  entries    ManifestEntry[]
+  events     AccessEvent[]
+}
+
+model ManifestVersion {
+  id          Int             @id @default(autoincrement())
+  voyageId    Int
+  versionNo   Int
+  submittedBy String
+  note        String?
+  superseded  Boolean         @default(false)
+  submittedAt DateTime        @default(now())
+  voyage      Voyage          @relation(fields: [voyageId], references: [id])
+  entries     ManifestEntry[]
+
+  @@unique([voyageId, versionNo])
+}
+
+model ManifestEntry {
+  id        Int             @id @default(autoincrement())
+  versionId Int
+  personId  Int
+  role      String          @default("船员")
+  version   ManifestVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  person    Person          @relation(fields: [personId], references: [id])
+
+  @@unique([versionId, personId])
+}
+
+/// 通行事件。eventId 为船梯口设备生成的全局唯一事件号，离线补传据此去重
+model AccessEvent {
+  id         Int      @id @default(autoincrement())
+  eventId    String   @unique
+  voyageId   Int
+  personId   Int
+  direction  String   // DISEMBARK 登岸 | EMBARK 返船 | RELIEVED 换班交接（系统关闭在岸状态）
+  scannedAt  DateTime
+  receivedAt DateTime @default(now())
+  source     String   @default("ONLINE") // ONLINE | OFFLINE
+  batchId    String?
+  voyage     Voyage   @relation(fields: [voyageId], references: [id])
+  person     Person   @relation(fields: [personId], references: [id])
+
+  @@index([voyageId, personId])
+  @@index([scannedAt])
+}

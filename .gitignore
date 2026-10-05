@@ -13,3 +13,9 @@ build/
 轨迹/
 录屏/
 视频/
+
+# 本地数据库
+*.db
+*.db-journal
+server/dist/
+web/dist/
